@@ -59,7 +59,7 @@ st.markdown("---")
 # --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
 st.sidebar.header("⚙️ Engine & Credentials")
 client_id = st.sidebar.text_input("Dhan Client ID", value="1105922505")
-access_token = st.sidebar.text_input("Dhan Access Token", type="password", value="eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzUxMiJ9...")
+access_token = st.sidebar.text_input("Dhan Access Token", type="password", value="")
 
 # Token Expiry Display
 token_expiry_str = get_token_expiry(access_token)
