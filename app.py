@@ -16,6 +16,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Initialize Session State variables so they don't reset on page refresh
+if 'access_token' not in st.session_state:
+    st.session_state.access_token = ""
+if 'client_id' not in st.session_state:
+    st.session_state.client_id = "1105922505"
+if 'trading_mode' not in st.session_state:
+    st.session_state.trading_mode = False
+
 # Helper function to decode Dhan JWT token and find expiry time
 def get_token_expiry(token):
     try:
@@ -36,7 +44,6 @@ def get_token_expiry(token):
 # Function to fetch live Nifty Spot Price from Dhan API
 def fetch_nifty_spot(client_id, access_token):
     try:
-        # Dhan API endpoint for Market Quote / LTP (Nifty 50 Security ID is typically 13 under NSE)
         url = "https://api.dhan.co/v2/marketfeed/ltp"
         headers = {
             "access-token": access_token,
@@ -51,46 +58,22 @@ def fetch_nifty_spot(client_id, access_token):
         response = requests.post(url, headers=headers, json=payload, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            # Extract LTP from response structure
             if "data" in data and "ltp" in data["data"]:
                 return float(data["data"]["ltp"])
     except Exception as e:
         pass
     
-    # Fallback to default if API call fails or market is closed
     return 25005.80
-
-# --- TOP STATUS BAR ---
-top_col1, top_col2, top_col3, top_col4 = st.columns([2, 2, 2, 2])
-
-with top_col1:
-    st.markdown("🟢 **DHAN LIVE** | Status: **Connected**")
-with top_col2:
-    st.markdown("🟢 **DATA STREAM** | Active: **5 Min Auto-Poll**")
-with top_col3:
-    trading_mode = st.toggle("🚀 TRADING ENGINE ON / OFF", value=False)
-    if trading_mode:
-        st.caption("⚡ Status: **LIVE TRADING ACTIVE**")
-    else:
-        st.caption("🔒 Status: **STANDBY / PAUSED**")
-
-with top_col4:
-    emergency_exit = st.button("🚨 EMERGENCY EXIT (KILL SWITCH)", type="primary")
-
-if emergency_exit:
-    st.error("⚠️ KILL SWITCH ACTIVATED! All active positions closed, trading halted.")
-    st.stop()
-
-st.title("⚡ Smart Pro Engine - Nifty Algo Terminal & Re-Entry Logic")
-st.markdown("---")
 
 # --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
 st.sidebar.header("⚙️ Engine & Credentials")
-client_id = st.sidebar.text_input("Dhan Client ID", value="1105922505")
-access_token = st.sidebar.text_input("Dhan Access Token", type="password", value="")
+
+# Use session state to persist inputs across refreshes
+st.session_state.client_id = st.sidebar.text_input("Dhan Client ID", value=st.session_state.client_id)
+st.session_state.access_token = st.sidebar.text_input("Dhan Access Token", type="password", value=st.session_state.access_token)
 
 # Token Expiry Display
-token_expiry_str = get_token_expiry(access_token)
+token_expiry_str = get_token_expiry(st.session_state.access_token)
 st.sidebar.info(f"🕒 **Token Expires At:**\n`{token_expiry_str}`")
 
 st.sidebar.subheader("Strategy Parameters")
@@ -100,8 +83,34 @@ stop_loss = st.sidebar.number_input("Stop Loss (Points)", value=20)
 target_pts = st.sidebar.number_input("Target (Points)", value=60)
 max_reentries = st.sidebar.number_input("Max Re-Entries Allowed", value=2, min_value=0, max_value=5)
 
-# Fetch Dynamic Live ATM Strike Calculation via Dhan API
-live_spot_price = fetch_nifty_spot(client_id, access_token)
+# --- TOP STATUS BAR ---
+top_col1, top_col2, top_col3, top_col4 = st.columns([2, 2, 2, 2])
+
+with top_col1:
+    st.markdown("🟢 **DHAN LIVE** | Status: **Connected**")
+with top_col2:
+    st.markdown("🟢 **DATA STREAM** | Active: **5 Min Auto-Poll**")
+with top_col3:
+    # Persistent Trading Mode Toggle
+    st.session_state.trading_mode = st.toggle("🚀 TRADING ENGINE ON / OFF", value=st.session_state.trading_mode)
+    if st.session_state.trading_mode:
+        st.caption("⚡ Status: **LIVE TRADING ACTIVE**")
+    else:
+        st.caption("🔒 Status: **STANDBY / PAUSED**")
+
+with top_col4:
+    emergency_exit = st.button("🚨 EMERGENCY EXIT (KILL SWITCH)", type="primary")
+
+if emergency_exit:
+    st.session_state.trading_mode = False
+    st.error("⚠️ KILL SWITCH ACTIVATED! All active positions closed, trading halted.")
+    st.stop()
+
+st.title("⚡ Smart Pro Engine - Nifty Algo Terminal & Re-Entry Logic")
+st.markdown("---")
+
+# Fetch Dynamic Live ATM Strike Calculation via Dhan API using session state credentials
+live_spot_price = fetch_nifty_spot(st.session_state.client_id, st.session_state.access_token)
 atm_strike = round(live_spot_price / 50) * 50
 
 # --- DASHBOARD MAIN PANELS ---
@@ -118,7 +127,7 @@ with col1:
 
 with col2:
     st.subheader("📋 Execution & State Status")
-    if trading_mode:
+    if st.session_state.trading_mode:
         st.success("🟢 Bot is actively running with Re-entry & SMC logic.")
     else:
         st.warning("⚠️ Standby mode. Turn on the **TRADING ENGINE** switch above.")
@@ -159,12 +168,11 @@ if st.button("🚀 Run Strategy Simulation (With Re-Entry & ATM Logic)", type="p
             prev_signal = df['Signal'].iloc[i-1]
             price = df['Close'].iloc[i]
             
-            # Fresh Entry / Re-Entry Logic Execution
             if current_signal != prev_signal or (position == 0 and last_sl_price > 0 and abs(price - last_sl_price) < 15):
                 if position != 0:
                     raw_pnl = (price - entry_price) * position
                     if raw_pnl <= -stop_loss:
-                        last_sl_price = entry_price # Save zone where SL hit
+                        last_sl_price = entry_price
                         trades.append(-stop_loss)
                         position = 0
                     elif raw_pnl >= target_pts:
@@ -176,7 +184,6 @@ if st.button("🚀 Run Strategy Simulation (With Re-Entry & ATM Logic)", type="p
                         trades.append(raw_pnl)
                         position = 0
                 
-                # Check Re-Entry condition
                 if position == 0:
                     if last_sl_price > 0 and abs(price - last_sl_price) < 15 and reentry_count < max_reentries:
                         reentry_count += 1
