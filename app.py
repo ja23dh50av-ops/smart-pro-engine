@@ -16,14 +16,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State variables so they don't reset on page refresh
-if 'access_token' not in st.session_state:
-    st.session_state.access_token = ""
-if 'client_id' not in st.session_state:
-    st.session_state.client_id = "1105922505"
-if 'trading_mode' not in st.session_state:
-    st.session_state.trading_mode = False
-
 # Helper function to decode Dhan JWT token and find expiry time
 def get_token_expiry(token):
     try:
@@ -65,16 +57,31 @@ def fetch_nifty_spot(client_id, access_token):
     
     return 25005.80
 
-# --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
+# --- SIDEBAR CONTROLS & TOKEN EXPIRY (Using 'key' to prevent reset) ---
 st.sidebar.header("⚙️ Engine & Credentials")
 
-# Use session state to persist inputs across refreshes
-st.session_state.client_id = st.sidebar.text_input("Dhan Client ID", value=st.session_state.client_id)
-st.session_state.access_token = st.sidebar.text_input("Dhan Access Token", type="password", value=st.session_state.access_token)
+if 'client_id' not in st.session_state:
+    st.session_state.client_id = "1105922505"
+if 'access_token' not in st.session_state:
+    st.session_state.access_token = ""
+
+st.sidebar.text_input("Dhan Client ID", key="client_id")
+st.sidebar.text_input("Dhan Access Token", type="password", key="access_token")
 
 # Token Expiry Display
 token_expiry_str = get_token_expiry(st.session_state.access_token)
 st.sidebar.info(f"🕒 **Token Expires At:**\n`{token_expiry_str}`")
+
+# --- MULTI-STRATEGY SELECTOR ---
+st.sidebar.subheader("🎯 Multi-Strategy Selector")
+selected_strategy = st.sidebar.selectbox(
+    "Choose Trading Logic:",
+    [
+        "Custom Indicator Logic (Chandu's Personal)", 
+        "Super Trend & EMA Crossover", 
+        "SMC Order Block Rejection"
+    ]
+)
 
 st.sidebar.subheader("Strategy Parameters")
 ema_fast = st.sidebar.slider("Fast EMA", 5, 20, 13)
@@ -91,7 +98,8 @@ with top_col1:
 with top_col2:
     st.markdown("🟢 **DATA STREAM** | Active: **5 Min Auto-Poll**")
 with top_col3:
-    # Persistent Trading Mode Toggle
+    if 'trading_mode' not in st.session_state:
+        st.session_state.trading_mode = False
     st.session_state.trading_mode = st.toggle("🚀 TRADING ENGINE ON / OFF", value=st.session_state.trading_mode)
     if st.session_state.trading_mode:
         st.caption("⚡ Status: **LIVE TRADING ACTIVE**")
@@ -120,6 +128,7 @@ with col1:
     st.subheader("📊 NIFTY 50 Live & Strike Selector")
     st.metric(label="Live Spot Price", value=f"{live_spot_price}", delta="Bullish")
     st.markdown(f"""
+    * **Active Strategy:** `{selected_strategy}`
     * **Calculated ATM Strike:** `{atm_strike} CE / PE`
     * **Trend Filter:** `{ema_fast} / {ema_slow} EMA`
     * **State Machine:** **Active (Re-Entry Enabled)**
@@ -128,7 +137,7 @@ with col1:
 with col2:
     st.subheader("📋 Execution & State Status")
     if st.session_state.trading_mode:
-        st.success("🟢 Bot is actively running with Re-entry & SMC logic.")
+        st.success(f"🟢 Bot is actively running with **{selected_strategy}** logic.")
     else:
         st.warning("⚠️ Standby mode. Turn on the **TRADING ENGINE** switch above.")
     
@@ -141,7 +150,7 @@ st.markdown("---")
 
 # --- SIMULATION & BACKTEST WITH RE-ENTRY LOGIC ---
 if st.button("🚀 Run Strategy Simulation (With Re-Entry & ATM Logic)", type="primary"):
-    with st.spinner("Running institutional backtest with State Machine Re-entry..."):
+    with st.spinner(f"Running backtest for {selected_strategy}..."):
         np.random.seed(42)
         dates = pd.date_range(start="2026-11-08 09:15:00", periods=300, freq="5min")
         close_prices = 25000 + np.cumsum(np.random.randn(300) * 10)
@@ -198,7 +207,7 @@ if st.button("🚀 Run Strategy Simulation (With Re-Entry & ATM Logic)", type="p
         win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
         net_points = sum(trades)
 
-    st.success("Backtest Completed with State Machine Re-Entry Enabled!")
+    st.success(f"Backtest Completed for {selected_strategy}!")
     
     res1, res2, res3, res4 = st.columns(4)
     res1.metric("Total Executed Trades", f"{total_trades}")
