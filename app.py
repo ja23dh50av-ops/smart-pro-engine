@@ -4,6 +4,7 @@ import numpy as np
 import base64
 import json
 import datetime
+import requests
 
 # Page Configuration
 st.set_page_config(page_title="Smart Pro Engine - Zero-Lag & Strike Selector", page_icon="⚡", layout="wide")
@@ -31,6 +32,33 @@ def get_token_expiry(token):
     except Exception:
         pass
     return "Invalid or Unreadable Token"
+
+# Function to fetch live Nifty Spot Price from Dhan API
+def fetch_nifty_spot(client_id, access_token):
+    try:
+        # Dhan API endpoint for Market Quote / LTP (Nifty 50 Security ID is typically 13 under NSE)
+        url = "https://api.dhan.co/v2/marketfeed/ltp"
+        headers = {
+            "access-token": access_token,
+            "client-id": client_id,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "SEM_EXCH": "NSE",
+            "SEM_SMTT": "INDICES",
+            "securityId": "13"
+        }
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            # Extract LTP from response structure
+            if "data" in data and "ltp" in data["data"]:
+                return float(data["data"]["ltp"])
+    except Exception as e:
+        pass
+    
+    # Fallback to default if API call fails or market is closed
+    return 25005.80
 
 # --- TOP STATUS BAR ---
 top_col1, top_col2, top_col3, top_col4 = st.columns([2, 2, 2, 2])
@@ -72,8 +100,8 @@ stop_loss = st.sidebar.number_input("Stop Loss (Points)", value=20)
 target_pts = st.sidebar.number_input("Target (Points)", value=60)
 max_reentries = st.sidebar.number_input("Max Re-Entries Allowed", value=2, min_value=0, max_value=5)
 
-# Live ATM Strike Calculation
-live_spot_price = 25030.35 
+# Fetch Dynamic Live ATM Strike Calculation via Dhan API
+live_spot_price = fetch_nifty_spot(client_id, access_token)
 atm_strike = round(live_spot_price / 50) * 50
 
 # --- DASHBOARD MAIN PANELS ---
