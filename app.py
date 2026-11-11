@@ -1,288 +1,118 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import base64
-import json
+import yfinance as yf
 import datetime
-import requests
 
 # Page Configuration
-st.set_page_config(page_title="Smart Pro Engine - Zero-Lag & Strike Selector", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="R J SNACKS - Live Rocket Breakout Scanner", page_icon="🚀", layout="wide")
 
-# Custom Styling for Terminal
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 5px; font-weight: bold; }
+    .stButton>button { width: 100%; border-radius: 6px; font-weight: bold; background-color: #ff9800; color: white; }
+    .stButton>button:hover { background-color: #e68900; }
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State securely
-if 'client_id' not in st.session_state:
-    st.session_state.client_id = "1105922505"
-if 'access_token' not in st.session_state:
-    st.session_state.access_token = ""
-if 'trading_mode' not in st.session_state:
-    st.session_state.trading_mode = False
-
-# Helper function to decode JWT token and find expiry time
-def get_token_expiry(token):
-    try:
-        parts = token.split('.')
-        if len(parts) >= 2:
-            payload = parts[1]
-            padded = payload + '=' * (-len(payload) % 4)
-            decoded = base64.urlsafe_b64decode(padded).decode('utf-8')
-            data = json.loads(decoded)
-            if 'exp' in data:
-                exp_timestamp = data['exp']
-                exp_time = datetime.datetime.fromtimestamp(exp_timestamp)
-                return exp_time.strftime('%Y-%m-%d %H:%M:%S')
-    except Exception:
-        pass
-    return "Invalid or Unreadable Token"
-
-# Function to fetch live Nifty Spot Price from Dhan API
-def fetch_nifty_spot(client_id, access_token):
-    try:
-        url = "https://api.dhan.co/v2/marketfeed/ltp"
-        headers = {
-            "access-token": access_token,
-            "client-id": client_id,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "SEM_EXCH": "NSE",
-            "SEM_SMTT": "INDICES",
-            "securityId": "13"
-        }
-        response = requests.post(url, headers=headers, json=payload, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if "data" in data and "ltp" in data["data"]:
-                return float(data["data"]["ltp"])
-    except Exception as e:
-        pass
-    return 25005.80
-
-# Function to Place Live Order via Dhan API
-def place_dhan_order(client_id, access_token, transaction_type, quantity, security_id):
-    try:
-        url = "https://api.dhan.co/v2/orders"
-        headers = {
-            "access-token": access_token,
-            "client-id": client_id,
-            "Content-Type": "application/json"
-        }
-        # Payload structure for Dhan Live Order API
-        payload = {
-            "dhanClientId": client_id,
-            "correlationId": "rj_algo_1",
-            "transactionType": transaction_type, # "BUY" or "SELL"
-            "exchangeSegment": "NSE_FNO",
-            "productType": "INTRADAY",
-            "orderType": "MARKET",
-            "validity": "DAY",
-            "securityId": str(security_id),
-            "quantity": int(quantity),
-            "disclosedQuantity": 0,
-            "price": 0,
-            "triggerPrice": 0
-        }
-        response = requests.post(url, headers=headers, json=payload, timeout=5)
-        if response.status_code == 200:
-            res_data = response.json()
-            return True, res_data.get("orderId", "SUCCESS")
-        else:
-            return False, response.text
-    except Exception as e:
-        return False, str(e)
-
-# --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
-st.sidebar.header("⚙️ Engine & Credentials")
-
-def update_client_id():
-    st.session_state.client_id = st.session_state.ci_input
-
-def update_access_token():
-    st.session_state.access_token = st.session_state.at_input
-
-st.sidebar.text_input("Dhan Client ID", value=st.session_state.client_id, key="ci_input", on_change=update_client_id)
-st.sidebar.text_input("Dhan Access Token", type="password", value=st.session_state.access_token, key="at_input", on_change=update_access_token)
-
-# Token Expiry Display
-token_expiry_str = get_token_expiry(st.session_state.access_token)
-st.sidebar.info(f"🕒 **Token Expires At:**\n`{token_expiry_str}`")
-
-# --- MULTI-STRATEGY SELECTOR ---
-st.sidebar.subheader("🎯 Multi-Strategy Selector")
-selected_strategy = st.sidebar.selectbox(
-    "Choose Trading Logic:",
-    [
-        "Custom Indicator Logic (Chandu's Personal)", 
-        "Super Trend & EMA Crossover", 
-        "SMC Order Block Rejection"
-    ]
-)
-
-st.sidebar.subheader("Strategy Parameters")
-ema_fast = st.sidebar.slider("Fast EMA", 5, 20, 13)
-ema_slow = st.sidebar.slider("Slow EMA", 21, 50, 34)
-stop_loss = st.sidebar.number_input("Stop Loss (Points)", value=20)
-target_pts = st.sidebar.number_input("Target (Points)", value=60)
-max_reentries = st.sidebar.number_input("Max Re-Entries Allowed", value=2, min_value=0, max_value=5)
-lot_qty = st.sidebar.number_input("Order Quantity (Lots/Qty)", value=25)
-
-# --- TOP STATUS BAR ---
-top_col1, top_col2, top_col3, top_col4 = st.columns([2, 2, 2, 2])
-
-with top_col1:
-    st.markdown("🟢 **DHAN LIVE** | Status: **Connected**")
-with top_col2:
-    st.markdown("🟢 **DATA STREAM** | Active: **5 Min Auto-Poll**")
-with top_col3:
-    st.session_state.trading_mode = st.toggle("🚀 TRADING ENGINE ON / OFF", value=st.session_state.trading_mode)
-    if st.session_state.trading_mode:
-        st.caption("⚡ Status: **LIVE TRADING ACTIVE**")
-    else:
-        st.caption("🔒 Status: **STANDBY / PAUSED**")
-
-with top_col4:
-    emergency_exit = st.button("🚨 EMERGENCY EXIT (KILL SWITCH)", type="primary")
-
-if emergency_exit:
-    st.session_state.trading_mode = False
-    st.error("⚠️ KILL SWITCH ACTIVATED! All active positions closed, trading halted.")
-    st.stop()
-
-st.title("⚡ Smart Pro Engine - Nifty Algo Terminal & Re-Entry Logic")
+st.title("🚀 Live Rocket Breakout Scanner (TradingView Logic)")
 st.markdown("---")
 
-# Fetch Dynamic Live ATM Strike Calculation via Dhan API
-live_spot_price = fetch_nifty_spot(st.session_state.client_id, st.session_state.access_token)
-atm_strike = round(live_spot_price / 50) * 50
+# Sidebar Filters matching your TradingView Screener
+st.sidebar.header("⚙️ Screener Filters (Live)")
+min_price = st.sidebar.number_input("Min Price (INR)", value=300)
+max_price = st.sidebar.number_input("Max Price (INR)", value=1200)
+min_rsi = st.sidebar.slider("Min RSI (14)", 40, 70, 55)
+max_rsi = st.sidebar.slider("Max RSI (14)", 70, 90, 75)
+min_rel_vol = st.sidebar.slider("Min Relative Volume", 1.0, 5.0, 2.0)
 
-# --- DASHBOARD MAIN PANELS ---
-col1, col2 = st.columns(2)
+scan_btn = st.sidebar.button("🔍 Scan Live Rocket Stocks")
 
-with col1:
-    st.subheader("📊 NIFTY 50 Live & Strike Selector")
-    st.metric(label="Live Spot Price", value=f"{live_spot_price}", delta="Bullish")
-    st.markdown(f"""
-    * **Active Strategy:** `{selected_strategy}`
-    * **Calculated ATM Strike:** `{atm_strike} CE / PE`
-    * **Trend Filter:** `{ema_fast} / {ema_slow} EMA`
-    * **State Machine:** **Active (Re-Entry Enabled)**
-    """)
+# Popular NSE Stocks Universe to scan live
+nse_watchlist = [
+    "SUNTV.NS", "KTKBANK.NS", "HINDPETRO.NS", "RELIANCE.NS", "TCS.NS", 
+    "INFY.NS", "SBIN.NS", "TATAMOTORS.NS", "ITC.NS", "ICICIBANK.NS", 
+    "AXISBANK.NS", "LT.NS", "BHARTIARTL.NS", "BAJFINANCE.NS", "MARUTI.NS",
+    "TITAN.NS", "ASIANPAINT.NS", "HINDUNILVR.NS", "NTPC.NS", "POWERGRID.NS"
+]
 
-with col2:
-    st.subheader("📋 Execution & State Status")
-    if st.session_state.trading_mode:
-        st.success(f"🟢 Bot is actively running with **{selected_strategy}** logic.")
-    else:
-        st.warning("⚠️ Standby mode. Turn on the **TRADING ENGINE** switch above.")
+@st.cache_data(ttl=300)
+def fetch_and_filter_stocks(min_p, max_p, rsi_lo, rsi_hi, min_rv):
+    rocket_list = []
     
-    st.markdown(f"""
-    * **Selected Option Type:** `ATM {atm_strike} CE`
-    * **Re-Entry Limit:** Up to {max_reentries} times on same zone
-    """)
-
-st.markdown("---")
-
-# --- SIMULATION & LIVE ORDER EXECUTION ---
-sim_col1, sim_col2 = st.columns(2)
-
-with sim_col1:
-    run_sim = st.button("🚀 Run Strategy Backtest Simulation", type="primary")
-
-with sim_col2:
-    live_order_btn = st.button("⚡ EXECUTE LIVE ORDER VIA DHAN API", type="primary")
-
-if live_order_btn:
-    if not st.session_state.trading_mode:
-        st.error("❌ ERROR: Please turn ON the **TRADING ENGINE** toggle at the top before executing live orders!")
-    elif not st.session_state.access_token:
-        st.error("❌ ERROR: Please enter a valid Dhan Access Token in the sidebar!")
-    else:
-        with st.spinner("Placing Live Order to Dhan Broker..."):
-            # Example Security ID for ATM CE (You can map your dynamic option security ID here)
-            # For demonstration, we trigger a BUY order for Nifty ATM Call
-            success, msg = place_dhan_order(
-                st.session_state.client_id, 
-                st.session_state.access_token, 
-                "BUY", 
-                lot_qty, 
-                security_id="13" # Replace with actual dynamic Option Security ID if mapped
-            )
-            if success:
-                st.success(f"🎉 LIVE ORDER PLACED SUCCESSFULLY! Order ID: {msg}")
-            else:
-                st.error(f"❌ Order Failed: {msg}")
-
-if run_sim:
-    with st.spinner(f"Running backtest for {selected_strategy}..."):
-        np.random.seed(42)
-        dates = pd.date_range(start="2026-11-08 09:15:00", periods=300, freq="5min")
-        close_prices = 25000 + np.cumsum(np.random.randn(300) * 10)
-        
-        df = pd.DataFrame({
-            'Date': dates,
-            'Close': close_prices,
-            'High': close_prices + 15,
-            'Low': close_prices - 15
-        })
-
-        df['EMA_Fast'] = df['Close'].ewm(span=ema_fast, adjust=False).mean()
-        df['EMA_Slow'] = df['Close'].ewm(span=ema_slow, adjust=False).mean()
-        df['Signal'] = np.where(df['EMA_Fast'] > df['EMA_Slow'], 1, -1)
-
-        trades = []
-        position = 0
-        entry_price = 0
-        reentry_count = 0
-        last_sl_price = 0
-
-        for i in range(1, len(df)):
-            current_signal = df['Signal'].iloc[i]
-            prev_signal = df['Signal'].iloc[i-1]
-            price = df['Close'].iloc[i]
-            
-            if current_signal != prev_signal or (position == 0 and last_sl_price > 0 and abs(price - last_sl_price) < 15):
-                if position != 0:
-                    raw_pnl = (price - entry_price) * position
-                    if raw_pnl <= -stop_loss:
-                        last_sl_price = entry_price
-                        trades.append(-stop_loss)
-                        position = 0
-                    elif raw_pnl >= target_pts:
-                        trades.append(target_pts)
-                        position = 0
-                        reentry_count = 0
-                        last_sl_price = 0
-                    else:
-                        trades.append(raw_pnl)
-                        position = 0
+    for ticker in nse_watchlist:
+        try:
+            df = yf.download(ticker, period="6mo", interval="1d", progress=False)
+            if df.empty or len(df) < 200:
+                continue
                 
-                if position == 0:
-                    if last_sl_price > 0 and abs(price - last_sl_price) < 15 and reentry_count < max_reentries:
-                        reentry_count += 1
-                        position = current_signal
-                        entry_price = price
-                    elif last_sl_price == 0 and current_signal != prev_signal:
-                        position = current_signal
-                        entry_price = price
+            # Flatten multi-index columns if returned by yfinance
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
-        total_trades = len(trades)
-        winning_trades = [t for t in trades if t > 0]
-        win_rate = (len(winning_trades) / total_trades * 100) if total_trades > 0 else 0
-        net_points = sum(trades)
+            close = df['Close']
+            volume = df['Volume']
+            
+            cmp = float(close.iloc[-1])
+            
+            # 1. Price Filter (300 to 1200)
+            if not (min_p <= cmp <= max_p):
+                continue
+                
+            # 2. Moving Averages (Price > EMA 50 and EMA 200)
+            ema_50 = float(close.ewm(span=50, adjust=False).mean().iloc[-1])
+            ema_200 = float(close.ewm(span=200, adjust=False).mean().iloc[-1])
+            
+            if not (cmp > ema_50 and cmp > ema_200):
+                continue
+                
+            # 3. RSI (14) Calculation
+            delta = close.diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs))
+            current_rsi = float(rsi.iloc[-1])
+            
+            if not (rsi_lo <= current_rsi <= rsi_hi):
+                continue
+                
+            # 4. Volume & Relative Volume Check
+            avg_vol_20 = float(volume.rolling(window=20).mean().iloc[-1])
+            current_vol = float(volume.iloc[-1])
+            rel_vol = current_vol / avg_vol_20 if avg_vol_20 > 0 else 1.0
+            
+            if rel_vol < min_rv:
+                continue
+                
+            # 5. 3M High Breakout Check (Price near 3-month high)
+            high_3m = float(close.rolling(window=60).max().iloc[-1])
+            if cmp < (high_3m * 0.96): # Within 4% of 3M high
+                continue
+                
+            chg_pct = float(((cmp - float(close.iloc[-2])) / float(close.iloc[-2])) * 100)
+            
+            rocket_list.append({
+                "Symbol": ticker.replace(".NS", ""),
+                "CMP (INR)": round(cmp, 2),
+                "Chg %": round(chg_pct, 2),
+                "RSI (14)": round(current_rsi, 2),
+                "Rel Vol": round(rel_vol, 2),
+                "EMA 50": round(ema_50, 2),
+                "EMA 200": round(ema_200, 2),
+                "3M High": round(high_3m, 2)
+            })
+            
+        except Exception as e:
+            continue
+            
+        return pd.DataFrame(rocket_list)
 
-    st.success(f"Backtest Completed for {selected_strategy}!")
-    
-    res1, res2, res3, res4 = st.columns(4)
-    res1.metric("Total Executed Trades", f"{total_trades}")
-    res2.metric("Win Rate", f"{win_rate:.2f}%")
-    res3.metric("Net P&L Points", f"{net_points:.2f} pts")
-    res4.metric("Re-Entries Triggered", f"{reentry_count}")
-
-    st.subheader("📈 Strategy Performance Chart with Re-Entry Points")
-    st.line_chart(df[['Close', 'EMA_Fast', 'EMA_Slow']])
+if scan_btn or True:
+    with st.spinner("Scanning NSE live market for rocket breakout stocks using your TradingView filters..."):
+        df_result = fetch_and_filter_stocks(min_price, max_price, min_rsi, max_rsi, min_rel_vol)
+        
+    if df_result is not None and not df_result.empty:
+        st.success(f"🎯 Found {len(df_result)} Live Rocket Breakout Stocks matching your criteria!")
+        st.dataframe(df_result, use_container_width=True)
+    else:
+        st.warning("⚠️ No stocks matched the strict filter criteria right now, or market data is syncing. Try adjusting the RSI or Price range slightly.")
