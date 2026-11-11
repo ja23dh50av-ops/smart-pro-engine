@@ -5,7 +5,6 @@ import base64
 import json
 import datetime
 import requests
-import os
 
 # Page Configuration
 st.set_page_config(page_title="Smart Pro Engine - Zero-Lag & Strike Selector", page_icon="⚡", layout="wide")
@@ -17,32 +16,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Local Config File to save credentials permanently on your PC
-CONFIG_FILE = "config.json"
-
-def load_local_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except:
-            pass
-    return {"client_id": "1105922505", "access_token": ""}
-
-def save_local_config(client_id, access_token):
-    try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump({"client_id": client_id, "access_token": access_token}, f)
-    except:
-            pass
-
-# Load saved credentials
-saved_config = load_local_config()
-
+# Initialize Session State securely
 if 'client_id' not in st.session_state:
-    st.session_state.client_id = saved_config.get("client_id", "1105922505")
+    st.session_state.client_id = "1105922505"
 if 'access_token' not in st.session_state:
-    st.session_state.access_token = saved_config.get("access_token", "")
+    st.session_state.access_token = ""
+if 'trading_mode' not in st.session_state:
+    st.session_state.trading_mode = False
 
 # Helper function to decode JWT token and find expiry time
 def get_token_expiry(token):
@@ -84,18 +64,50 @@ def fetch_nifty_spot(client_id, access_token):
         pass
     return 25005.80
 
+# Function to Place Live Order via Dhan API
+def place_dhan_order(client_id, access_token, transaction_type, quantity, security_id):
+    try:
+        url = "https://api.dhan.co/v2/orders"
+        headers = {
+            "access-token": access_token,
+            "client-id": client_id,
+            "Content-Type": "application/json"
+        }
+        # Payload structure for Dhan Live Order API
+        payload = {
+            "dhanClientId": client_id,
+            "correlationId": "rj_algo_1",
+            "transactionType": transaction_type, # "BUY" or "SELL"
+            "exchangeSegment": "NSE_FNO",
+            "productType": "INTRADAY",
+            "orderType": "MARKET",
+            "validity": "DAY",
+            "securityId": str(security_id),
+            "quantity": int(quantity),
+            "disclosedQuantity": 0,
+            "price": 0,
+            "triggerPrice": 0
+        }
+        response = requests.post(url, headers=headers, json=payload, timeout=5)
+        if response.status_code == 200:
+            res_data = response.json()
+            return True, res_data.get("orderId", "SUCCESS")
+        else:
+            return False, response.text
+    except Exception as e:
+        return False, str(e)
+
 # --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
 st.sidebar.header("⚙️ Engine & Credentials")
 
-# Input fields
-client_id_input = st.sidebar.text_input("Dhan Client ID", value=st.session_state.client_id)
-access_token_input = st.sidebar.text_input("Dhan Access Token", type="password", value=st.session_state.access_token)
+def update_client_id():
+    st.session_state.client_id = st.session_state.ci_input
 
-# Save to session state and local config file whenever user types
-if client_id_input != st.session_state.client_id or access_token_input != st.session_state.access_token:
-    st.session_state.client_id = client_id_input
-    st.session_state.access_token = access_token_input
-    save_local_config(client_id_input, access_token_input)
+def update_access_token():
+    st.session_state.access_token = st.session_state.at_input
+
+st.sidebar.text_input("Dhan Client ID", value=st.session_state.client_id, key="ci_input", on_change=update_client_id)
+st.sidebar.text_input("Dhan Access Token", type="password", value=st.session_state.access_token, key="at_input", on_change=update_access_token)
 
 # Token Expiry Display
 token_expiry_str = get_token_expiry(st.session_state.access_token)
@@ -118,6 +130,7 @@ ema_slow = st.sidebar.slider("Slow EMA", 21, 50, 34)
 stop_loss = st.sidebar.number_input("Stop Loss (Points)", value=20)
 target_pts = st.sidebar.number_input("Target (Points)", value=60)
 max_reentries = st.sidebar.number_input("Max Re-Entries Allowed", value=2, min_value=0, max_value=5)
+lot_qty = st.sidebar.number_input("Order Quantity (Lots/Qty)", value=25)
 
 # --- TOP STATUS BAR ---
 top_col1, top_col2, top_col3, top_col4 = st.columns([2, 2, 2, 2])
@@ -127,8 +140,6 @@ with top_col1:
 with top_col2:
     st.markdown("🟢 **DATA STREAM** | Active: **5 Min Auto-Poll**")
 with top_col3:
-    if 'trading_mode' not in st.session_state:
-        st.session_state.trading_mode = False
     st.session_state.trading_mode = st.toggle("🚀 TRADING ENGINE ON / OFF", value=st.session_state.trading_mode)
     if st.session_state.trading_mode:
         st.caption("⚡ Status: **LIVE TRADING ACTIVE**")
@@ -177,8 +188,37 @@ with col2:
 
 st.markdown("---")
 
-# --- SIMULATION & BACKTEST WITH RE-ENTRY LOGIC ---
-if st.button("🚀 Run Strategy Simulation (With Re-Entry & ATM Logic)", type="primary"):
+# --- SIMULATION & LIVE ORDER EXECUTION ---
+sim_col1, sim_col2 = st.columns(2)
+
+with sim_col1:
+    run_sim = st.button("🚀 Run Strategy Backtest Simulation", type="primary")
+
+with sim_col2:
+    live_order_btn = st.button("⚡ EXECUTE LIVE ORDER VIA DHAN API", type="primary")
+
+if live_order_btn:
+    if not st.session_state.trading_mode:
+        st.error("❌ ERROR: Please turn ON the **TRADING ENGINE** toggle at the top before executing live orders!")
+    elif not st.session_state.access_token:
+        st.error("❌ ERROR: Please enter a valid Dhan Access Token in the sidebar!")
+    else:
+        with st.spinner("Placing Live Order to Dhan Broker..."):
+            # Example Security ID for ATM CE (You can map your dynamic option security ID here)
+            # For demonstration, we trigger a BUY order for Nifty ATM Call
+            success, msg = place_dhan_order(
+                st.session_state.client_id, 
+                st.session_state.access_token, 
+                "BUY", 
+                lot_qty, 
+                security_id="13" # Replace with actual dynamic Option Security ID if mapped
+            )
+            if success:
+                st.success(f"🎉 LIVE ORDER PLACED SUCCESSFULLY! Order ID: {msg}")
+            else:
+                st.error(f"❌ Order Failed: {msg}")
+
+if run_sim:
     with st.spinner(f"Running backtest for {selected_strategy}..."):
         np.random.seed(42)
         dates = pd.date_range(start="2026-11-08 09:15:00", periods=300, freq="5min")
