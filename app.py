@@ -5,6 +5,7 @@ import base64
 import json
 import datetime
 import requests
+import os
 
 # Page Configuration
 st.set_page_config(page_title="Smart Pro Engine - Zero-Lag & Strike Selector", page_icon="⚡", layout="wide")
@@ -16,11 +17,32 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Initialize Session State (Local & Safe)
+# Local Config File to save credentials permanently on your PC
+CONFIG_FILE = "config.json"
+
+def load_local_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                return json.load(f)
+        except:
+            pass
+    return {"client_id": "1105922505", "access_token": ""}
+
+def save_local_config(client_id, access_token):
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            json.dump({"client_id": client_id, "access_token": access_token}, f)
+    except:
+            pass
+
+# Load saved credentials
+saved_config = load_local_config()
+
 if 'client_id' not in st.session_state:
-    st.session_state.client_id = "1105922505"
+    st.session_state.client_id = saved_config.get("client_id", "1105922505")
 if 'access_token' not in st.session_state:
-    st.session_state.access_token = ""
+    st.session_state.access_token = saved_config.get("access_token", "")
 
 # Helper function to decode JWT token and find expiry time
 def get_token_expiry(token):
@@ -65,8 +87,15 @@ def fetch_nifty_spot(client_id, access_token):
 # --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
 st.sidebar.header("⚙️ Engine & Credentials")
 
-st.sidebar.text_input("Dhan Client ID", key="client_id")
-st.sidebar.text_input("Dhan Access Token", type="password", key="access_token")
+# Input fields
+client_id_input = st.sidebar.text_input("Dhan Client ID", value=st.session_state.client_id)
+access_token_input = st.sidebar.text_input("Dhan Access Token", type="password", value=st.session_state.access_token)
+
+# Save to session state and local config file whenever user types
+if client_id_input != st.session_state.client_id or access_token_input != st.session_state.access_token:
+    st.session_state.client_id = client_id_input
+    st.session_state.access_token = access_token_input
+    save_local_config(client_id_input, access_token_input)
 
 # Token Expiry Display
 token_expiry_str = get_token_expiry(st.session_state.access_token)
