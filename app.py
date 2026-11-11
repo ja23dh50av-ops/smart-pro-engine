@@ -16,7 +16,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Helper function to decode Dhan JWT token and find expiry time
+# Initialize Session State using Streamlit Secrets (Secure & Permanent)
+if 'client_id' not in st.session_state:
+    st.session_state.client_id = st.secrets.get("DHAN_CLIENT_ID", "1105922505")
+if 'access_token' not in st.session_state:
+    st.session_state.access_token = st.secrets.get("DHAN_ACCESS_TOKEN", "")
+
+# Helper function to decode JWT token and find expiry time
 def get_token_expiry(token):
     try:
         parts = token.split('.')
@@ -54,16 +60,10 @@ def fetch_nifty_spot(client_id, access_token):
                 return float(data["data"]["ltp"])
     except Exception as e:
         pass
-    
     return 25005.80
 
-# --- SIDEBAR CONTROLS & TOKEN EXPIRY (Using 'key' to prevent reset) ---
+# --- SIDEBAR CONTROLS & TOKEN EXPIRY ---
 st.sidebar.header("⚙️ Engine & Credentials")
-
-if 'client_id' not in st.session_state:
-    st.session_state.client_id = "1105922505"
-if 'access_token' not in st.session_state:
-    st.session_state.access_token = ""
 
 st.sidebar.text_input("Dhan Client ID", key="client_id")
 st.sidebar.text_input("Dhan Access Token", type="password", key="access_token")
@@ -117,7 +117,7 @@ if emergency_exit:
 st.title("⚡ Smart Pro Engine - Nifty Algo Terminal & Re-Entry Logic")
 st.markdown("---")
 
-# Fetch Dynamic Live ATM Strike Calculation via Dhan API using session state credentials
+# Fetch Dynamic Live ATM Strike Calculation via Dhan API
 live_spot_price = fetch_nifty_spot(st.session_state.client_id, st.session_state.access_token)
 atm_strike = round(live_spot_price / 50) * 50
 
