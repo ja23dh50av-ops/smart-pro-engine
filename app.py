@@ -13,7 +13,7 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 6px; font-weight: bold; background-color: #ff9800; color: white; }
     .stButton>button:hover { background-color: #e68900; }
     </style>
-""", unsafe_allow_html=True
+""", unsafe_allow_html=True)
 
 # Initialize Session State for Dhan Credentials
 if 'client_id' not in st.session_state:
@@ -155,7 +155,7 @@ def place_dhan_live_order(client_id, access_token, transaction_type, quantity, s
         payload = {
             "dhanClientId": client_id,
             "correlationId": "rj_rocket_1",
-            "transactionType": transaction_type, # "BUY" or "SELL"
+            "transactionType": transaction_type,
             "exchangeSegment": "NSE_EQ",
             "productType": "INTRADAY",
             "orderType": "MARKET",
@@ -200,7 +200,6 @@ if scan_btn or True:
 st.markdown("---")
 st.subheader("⚡ Dhan Live API Order Execution Terminal")
 
-# Trading Engine On/Off Switch
 st.session_state.trading_mode = st.toggle("🚀 ENABLE DHAN LIVE TRADING ENGINE", value=st.session_state.trading_mode)
 
 exec_col1, exec_col2, exec_col3, exec_col4 = st.columns(4)
@@ -222,7 +221,6 @@ if place_trade:
     elif not st.session_state.access_token:
         st.error("❌ ERROR: Please enter your Dhan Access Token in the sidebar!")
     else:
-        # Get Security ID for selected stock
         sec_id = nse_watchlist.get(selected_stock, "2885")
         with st.spinner(f"Firing {order_action} order for {selected_stock} via Dhan API..."):
             success, msg = place_dhan_live_order(
